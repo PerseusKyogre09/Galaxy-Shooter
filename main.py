@@ -14,6 +14,8 @@ enemy_img = pygame.image.load("assets/enemy.png")
 player_laser_img = pygame.image.load("assets/player_laser.png")
 enemy_laser_img = pygame.image.load("assets/enemy_laser.png")
 background_img = pygame.image.load("assets/background.png")
+life_icon_img = pygame.image.load("assets/life_icon.png")
+life_lost_icon_img = pygame.image.load("assets/life_lost_icon.png")
 
 # Load sounds
 pygame.mixer.music.load("assets/background_music.mp3")
@@ -25,8 +27,8 @@ PLAYER_VELOCITY = 5
 LASER_VELOCITY = 8
 ENEMY_VELOCITY = 2
 ENEMY_LASER_VELOCITY = 6
-ENEMY_SPAWN_RATE = 100  # Increased to make it less frequent
-PLAYER_MAX_HEALTH = 100
+ENEMY_SPAWN_RATE = 120  # Lower frequency of enemies
+MAX_LIVES = 3
 
 # Set up fonts
 font = pygame.font.SysFont("comicsans", 30)
@@ -55,10 +57,10 @@ class Laser:
 class Player:
     COOLDOWN = 20  # frames between each laser shot
 
-    def __init__(self, x, y, health=PLAYER_MAX_HEALTH):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.health = health
+        self.lives = MAX_LIVES
         self.img = player_img
         self.mask = pygame.mask.from_surface(self.img)
         self.lasers = []
@@ -128,7 +130,7 @@ class Enemy:
             if laser.off_screen(HEIGHT):
                 self.lasers.remove(laser)
             elif laser.collision(player):
-                player.health -= 10
+                player.lives -= 1
                 explosion_sound.play()
                 self.lasers.remove(laser)
 
@@ -166,6 +168,14 @@ def game_over_screen():
     pygame.quit()
     sys.exit()
 
+# Draw Lives UI in the bottom right corner
+def draw_lives(player):
+    for i in range(MAX_LIVES):
+        if i < player.lives:
+            screen.blit(life_icon_img, (WIDTH - (i + 1) * 40, HEIGHT - 40))
+        else:
+            screen.blit(life_lost_icon_img, (WIDTH - (i + 1) * 40, HEIGHT - 40))
+
 # Main game loop
 def main():
     run = True
@@ -173,8 +183,7 @@ def main():
     clock = pygame.time.Clock()
     player = Player(300, 500)
     enemies = []
-    wave_length = 5
-    score = 0
+    enemy_timer = 0
 
     pygame.mixer.music.play(-1)
 
@@ -183,17 +192,31 @@ def main():
         screen.blit(background_img, (0, 0))
 
         # Check for game over condition
-        if player.health <= 0:
+        if player.lives <= 0:
             game_over_screen()
 
         # Draw and update player, enemies, and lasers
         player.draw(screen)
+        draw_lives(player)
+        
+        # Enemy management and spawning
+        if enemy_timer >= ENEMY_SPAWN_RATE:
+            enemy_x = random.randint(50, WIDTH - 100)
+            enemy_y = random.randint(-1500, -100)
+            enemies.append(Enemy(enemy_x, enemy_y, enemy_img))
+            enemy_timer = 0
+        else:
+            enemy_timer += 1
+
         for enemy in enemies:
             enemy.move(ENEMY_VELOCITY)
             enemy.draw(screen)
             enemy.move_lasers(ENEMY_LASER_VELOCITY, player)
-            if random.randrange(0, 2*ENEMY_SPAWN_RATE) == 1:  # Enemy shoots less frequently
+            if random.randrange(0, 2*ENEMY_SPAWN_RATE) == 1:
                 enemy.shoot()
+            if collide(enemy, player):
+                player.lives -= 1
+                enemies.remove(enemy)
 
         player.move_lasers(-LASER_VELOCITY, enemies)
 
@@ -204,23 +227,16 @@ def main():
 
         # Movement keys
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT] and player.x - PLAYER_VELOCITY > 0:  # Move left
+        if keys[pygame.K_LEFT] and player.x - PLAYER_VELOCITY > 0:
             player.x -= PLAYER_VELOCITY
-        if keys[pygame.K_RIGHT] and player.x + player.get_width() + PLAYER_VELOCITY < WIDTH:  # Move right
+        if keys[pygame.K_RIGHT] and player.x + player.get_width() + PLAYER_VELOCITY < WIDTH:
             player.x += PLAYER_VELOCITY
-        if keys[pygame.K_UP] and player.y - PLAYER_VELOCITY > 0:  # Move up
+        if keys[pygame.K_UP] and player.y - PLAYER_VELOCITY > 0:
             player.y -= PLAYER_VELOCITY
-        if keys[pygame.K_DOWN] and player.y + player.get_height() + PLAYER_VELOCITY < HEIGHT:  # Move down
+        if keys[pygame.K_DOWN] and player.y + player.get_height() + PLAYER_VELOCITY < HEIGHT:
             player.y += PLAYER_VELOCITY
-        if keys[pygame.K_SPACE]:  # Shoot laser
+        if keys[pygame.K_SPACE]:
             player.shoot()
-
-        # Spawn enemies
-        if len(enemies) == 0:
-            for i in range(wave_length):
-                enemy = Enemy(random.randrange(50, WIDTH-100), random.randrange(-1500, -100), enemy_img)
-                enemies.append(enemy)
-            wave_length += 5
 
         pygame.display.update()
 

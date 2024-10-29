@@ -1,10 +1,12 @@
 import pygame
 import random
 import sys
+import os
 
 # Initialize pygame and set up screen
 pygame.init()
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 800, 700  # Extra height for score/lives display at the bottom
+GAME_HEIGHT = 600  # Game area height
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Galaxy Shooter")
 
@@ -16,11 +18,19 @@ enemy_laser_img = pygame.image.load("assets/enemy_laser.png")
 background_img = pygame.image.load("assets/background.png")
 life_icon_img = pygame.image.load("assets/life_icon.png")
 life_lost_icon_img = pygame.image.load("assets/life_lost_icon.png")
+explosion_img = pygame.image.load("assets/explosion.png")
+
+# Player damaged images
+damage_imgs = [
+    pygame.image.load("assets/damage1.png"),
+    pygame.image.load("assets/damage2.png"),
+    pygame.image.load("assets/damage3.png")
+]
 
 # Load sounds
 pygame.mixer.music.load("assets/background_music.mp3")
 shoot_sound = pygame.mixer.Sound("assets/shoot.wav")
-explosion_sound = pygame.mixer.Sound("assets/explosion.wav")
+explosion_sound = pygame.mixer.Sound("assets/explosion.mp3")
 
 # Set up constants
 PLAYER_VELOCITY = 5
@@ -31,8 +41,23 @@ ENEMY_SPAWN_RATE = 120  # Lower frequency of enemies
 MAX_LIVES = 3
 
 # Set up fonts
-font = pygame.font.SysFont("comicsans", 30)
-game_over_font = pygame.font.SysFont("comicsans", 60)
+font = pygame.font.SysFont("arial", 30)
+game_over_font = pygame.font.SysFont("arial", 60)
+
+# High score file
+HIGH_SCORE_FILE = "highscore.txt"
+
+# Load or initialize high score
+def load_high_score():
+    if os.path.exists(HIGH_SCORE_FILE):
+        with open(HIGH_SCORE_FILE, "r") as file:
+            return int(file.read().strip())
+    else:
+        return 0
+
+def save_high_score(score):
+    with open(HIGH_SCORE_FILE, "w") as file:
+        file.write(str(score))
 
 # Classes for Player, Enemy, and Laser
 class Laser:
@@ -61,13 +86,26 @@ class Player:
         self.x = x
         self.y = y
         self.lives = MAX_LIVES
+        self.score = 0
         self.img = player_img
         self.mask = pygame.mask.from_surface(self.img)
         self.lasers = []
         self.cool_down_counter = 0
+        self.damage_counter = 0  # Counter for damage effect
+        self.is_damaged = False
 
     def draw(self, window):
         window.blit(self.img, (self.x, self.y))
+        
+        # Draw damage overlay if damaged
+        if self.is_damaged:
+            damage_img = damage_imgs[self.damage_counter // 5]  # Cycle through images quickly
+            window.blit(damage_img, (self.x, self.y))
+            self.damage_counter += 1
+            if self.damage_counter >= 15:  # Stop damage effect after cycling through images
+                self.is_damaged = False
+                self.damage_counter = 0
+
         for laser in self.lasers:
             laser.draw(window)
 
@@ -75,12 +113,13 @@ class Player:
         self.cooldown()
         for laser in self.lasers:
             laser.move(velocity)
-            if laser.off_screen(HEIGHT):
+            if laser.off_screen(GAME_HEIGHT):
                 self.lasers.remove(laser)
             else:
                 for enemy in enemies:
                     if laser.collision(enemy):
                         explosion_sound.play()
+                        self.score += 10
                         enemies.remove(enemy)
                         if laser in self.lasers:
                             self.lasers.remove(laser)
@@ -97,6 +136,11 @@ class Player:
             self.lasers.append(laser)
             shoot_sound.play()
             self.cool_down_counter = 1
+
+    def take_damage(self):
+        if not self.is_damaged:
+            self.lives -= 1
+            self.is_damaged = True
 
     def get_width(self):
         return self.img.get_width()
@@ -127,10 +171,10 @@ class Enemy:
         self.cooldown()
         for laser in self.lasers:
             laser.move(velocity)
-            if laser.off_screen(HEIGHT):
+            if laser.off_screen(GAME_HEIGHT):
                 self.lasers.remove(laser)
             elif laser.collision(player):
-                player.lives -= 1
+                player.take_damage()
                 explosion_sound.play()
                 self.lasers.remove(laser)
 
@@ -159,22 +203,33 @@ def collide(obj1, obj2):
     return obj1.mask.overlap(obj2.mask, (offset_x, offset_y)) != None
 
 # Function for game over screen
-def game_over_screen():
+def game_over_screen(player, high_score):
     screen.blit(background_img, (0, 0))
     game_over_label = game_over_font.render("GAME OVER", 1, (255, 0, 0))
+    score_label = font.render(f"Score: {player.score}", 1, (255, 255, 255))
+    high_score_label = font.render(f"High Score: {high_score}", 1, (255, 255, 255))
+    
     screen.blit(game_over_label, (WIDTH//2 - game_over_label.get_width()//2, HEIGHT//2 - game_over_label.get_height()//2))
+    screen.blit(score_label, (WIDTH//2 - score_label.get_width()//2, HEIGHT//2 + 50))
+    screen.blit(high_score_label, (WIDTH//2 - high_score_label.get_width()//2, HEIGHT//2 + 100))
+    
     pygame.display.update()
     pygame.time.delay(3000)
     pygame.quit()
     sys.exit()
 
-# Draw Lives UI in the bottom right corner
-def draw_lives(player):
+# Draw Lives UI, Score, and High Score
+def draw_status_bar(player, high_score):
+    # Draw lives
     for i in range(MAX_LIVES):
-        if i < player.lives:
-            screen.blit(life_icon_img, (WIDTH - (i + 1) * 40, HEIGHT - 40))
-        else:
-            screen.blit(life_lost_icon_img, (WIDTH - (i + 1) * 40, HEIGHT - 40))
+        icon = life_icon_img if i < player.lives else life_lost_icon_img
+        screen.blit(icon, (WIDTH - (i + 1) * 40, GAME_HEIGHT + 10))
+
+    # Draw score and high score
+    score_label = font.render(f"Score: {player.score}", 1, (255, 255, 255))
+    high_score_label = font.render(f"High Score: {high_score}", 1, (255, 255, 255))
+    screen.blit(score_label, (10, GAME_HEIGHT + 10))
+    screen.blit(high_score_label, (10, GAME_HEIGHT + 40))
 
 # Main game loop
 def main():
@@ -184,20 +239,24 @@ def main():
     player = Player(300, 500)
     enemies = []
     enemy_timer = 0
+    high_score = load_high_score()
 
     pygame.mixer.music.play(-1)
 
     while run:
         clock.tick(FPS)
         screen.blit(background_img, (0, 0))
+        screen.blit(background_img, (0, GAME_HEIGHT), (0, GAME_HEIGHT, WIDTH, HEIGHT - GAME_HEIGHT))  # Blank space for the status bar
 
         # Check for game over condition
         if player.lives <= 0:
-            game_over_screen()
+            if player.score > high_score:
+                save_high_score(player.score)
+            game_over_screen(player, high_score)
 
         # Draw and update player, enemies, and lasers
         player.draw(screen)
-        draw_lives(player)
+        draw_status_bar(player, high_score)
         
         # Enemy management and spawning
         if enemy_timer >= ENEMY_SPAWN_RATE:
@@ -212,10 +271,10 @@ def main():
             enemy.move(ENEMY_VELOCITY)
             enemy.draw(screen)
             enemy.move_lasers(ENEMY_LASER_VELOCITY, player)
-            if random.randrange(0, 2*ENEMY_SPAWN_RATE) == 1:
+            if random.randrange(0, 2 * ENEMY_SPAWN_RATE) == 1:
                 enemy.shoot()
             if collide(enemy, player):
-                player.lives -= 1
+                player.take_damage()
                 enemies.remove(enemy)
 
         player.move_lasers(-LASER_VELOCITY, enemies)
@@ -233,7 +292,7 @@ def main():
             player.x += PLAYER_VELOCITY
         if keys[pygame.K_UP] and player.y - PLAYER_VELOCITY > 0:
             player.y -= PLAYER_VELOCITY
-        if keys[pygame.K_DOWN] and player.y + player.get_height() + PLAYER_VELOCITY < HEIGHT:
+        if keys[pygame.K_DOWN] and player.y + player.get_height() + PLAYER_VELOCITY < GAME_HEIGHT:
             player.y += PLAYER_VELOCITY
         if keys[pygame.K_SPACE]:
             player.shoot()

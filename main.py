@@ -5,12 +5,12 @@ import os
 
 # Initialize pygame and set up screen
 pygame.init()
-WIDTH, HEIGHT = 800, 700  # Extra height for score/lives display at the bottom
-GAME_HEIGHT = 600  # Game area height
+WIDTH, HEIGHT = 800, 700 
+GAME_HEIGHT = 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Galaxy Shooter")
 
-# Load images from organized directories
+# Images
 player_img = pygame.image.load("assets/images/player.png")
 enemy_img = pygame.image.load("assets/images/enemy.png")
 meteor_img = pygame.image.load("assets/images/meteor.png")
@@ -113,7 +113,7 @@ class Player:
             laser.draw(window)
 
     # Update move_lasers to accept explosions as a parameter
-    def move_lasers(self, velocity, enemies, explosions):
+    def move_lasers(self, velocity, enemies, meteors, explosions):
         self.cooldown()
         for laser in self.lasers[:]:  # Use slicing to avoid issues while removing items
             laser.move(velocity)
@@ -126,6 +126,16 @@ class Player:
                         self.score += 10
                         enemies.remove(enemy)
                         explosions.append(Explosion(enemy.x, enemy.y))  # Append explosion to list
+                        if laser in self.lasers:
+                            self.lasers.remove(laser)
+                            break  # Stop checking after removing laser
+
+                # Check collision with meteors
+                for meteor in meteors[:]:
+                    if laser.collision(meteor):
+                        explosion_sound.play()
+                        meteors.remove(meteor)
+                        explosions.append(Explosion(meteor.x, meteor.y))  # Append explosion to list
                         if laser in self.lasers:
                             self.lasers.remove(laser)
                             break  # Stop checking after removing laser
@@ -371,7 +381,7 @@ def main():
             elif meteor.y + meteor.get_height() > GAME_HEIGHT:
                 meteors.remove(meteor)
 
-        player.move_lasers(-LASER_VELOCITY, enemies, explosions)  # Pass explosions
+        player.move_lasers(-LASER_VELOCITY, enemies, meteors, explosions)  # Pass explosions
 
 if __name__ == "__main__":
     main()
